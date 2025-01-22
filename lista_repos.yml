@@ -1,0 +1,88 @@
+# Automação usando github actions para listar a última tag de cada repo de uma organização
+#
+# Variáveis Usadas.:
+# GIT_API_TOKEN => secret do GitHub
+# OUR_ORG => Sua organização ou seu usuário
+#
+
+name: Listar Repositorios e suas Tags
+on:
+  workflow_dispatch:
+    inputs:
+ 
+jobs:
+list-repos-e-tags:
+   runs-on: next-scale-set-temporario
+   steps:
+
+     - name: Checkout repositorio
+       uses: actions/checkout@v3
+
+     # Gerando a lista de repositorios na organizacao  
+     - name: Obtendo a lista dos repositorios
+       run: |
+         curl -H "Authorization: token ${{ GIT_API_TOKEN }}" \
+         -H "Accept: application/vnd.github.v3+json" \
+         "https://api.github.com/orgs/$OUR_ORG/repos?per_page=100" -o repos.json
+         if [ $? -ne 0 ]; then
+           echo "Erro ao acessar a API do GitHub"
+           exit 1
+         fi
+         if ! [ -s repos.json ]; then
+           echo "Nenhum repositório encontrado ou erro ao processar a lista de repositórios"
+           exit 1
+         fi
+
+     # Listando os repositorios existentes na organizacao   
+     - name: Listando os repositorios
+       run: |
+         echo "Repositorios.: " 
+         jq -r '.[].name' repos.json
+ 
+     # Lista tags nos repositorios
+     - name: Lista Tags
+       run: |
+          repos=$(curl -H "Authorization: token ${{ GIT_API_TOKEN }}" "https://api.github.com/orgs/$OUR_ORG/repos?per_page=100" | jq 'sort_by(.name) | .[].name')
+          if [[ -z "$repos" ]]; then
+            echo "Nenhum repositório encontrado ou erro ao processar a lista de repositórios"
+            exit 1
+          fi
+          for repo in $repos; do
+            repo=$(echo $repo | sed 's/"//g')
+            tags=$(curl -s -H "Accept: application/vnd.github+json" -H "Authorization: token ${{ GIT_API_TOKEN }}" "https://api.github.com/repos/$OUR_ORG/$repo/tags?per_page=1&sort=committer-date")
+            if [[ -n "${tags}" && $tags != "[]" ]]; then
+              ultima_tag=$(echo $tags | jq -r '.[0].name // empty')
+              if [[ -n "$ultima_tag" ]]; then
+                echo "A última tag do $repo é.: $ultima_tag"
+              else
+                echo "$repo - Não existe tag"
+              fi
+            else
+              echo "$repo - Não existe tag"
+            fi
+          done
+
+      # Exibir de maneira ordenada os repos e suas tags
+     - name: Lista os repos e as tags de forma organizada
+       run: |
+          repos=$(curl -H "Authorization: token ${{ GIT_API_TOKEN }}" "https://api.github.com/orgs/$OUR_ORG/repos?per_page=100" | jq 'sort_by(.name) | .[].name')
+          if [[ -z "$repos" ]]; then
+            echo "Nenhum repositório encontrado ou erro ao processar a lista de repositórios"
+            exit 1
+          fi
+          echo "Exibe os repos e as tags ordenadamente.:"
+          for repo in $repos; do
+            repo=$(echo $repo | sed 's/"//g')
+            tags=$(curl -s -H "Accept: application/vnd.github+json" -H "Authorization: token ${{ secrets.API_TOKEN }}" "https://api.github.com/repos/my-org/$repo/tags?per_page=1&sort=committer-date")
+            if [[ -n "${tags}" && $tags != "[]" ]]; then
+              ultima_tag=$(echo $tags | jq -r '.[0].name // empty')
+              if [[ -n "$ultima_tag" ]]; then
+                echo "$repo - $ultima_tag"
+              else
+                echo "$repo - Não existe tag"
+              fi
+            else
+              echo "$repo - Não existe tag"
+            fi
+          done
+
